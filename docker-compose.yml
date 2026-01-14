@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-trader-postgres
+    environment:
+      POSTGRES_USER: aitrader
+      POSTGRES_PASSWORD: aitrader_password
+      POSTGRES_DB: trading_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aitrader"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trading-network
+
+  # AI-Trader Web UI
+  ai-trader-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: ai-trader-ui
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./docs:/app/docs
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://aitrader:aitrader_password@postgres:5432/trading_db
+    networks:
+      - trading-network
+    command: python3 -m http.server 8888
+
+  # AI-Trader Agent Service
+  ai-trader-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: ai-trader-agent
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs
+      - ./agent:/app/agent
+      - ./prompts:/app/prompts
+      - ./tools:/app/tools
+      - ./agent_tools:/app/agent_tools
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - OPENAI_API_BASE=${OPENAI_API_BASE}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ALPHAADVANTAGE_API_KEY=${ALPHAADVANTAGE_API_KEY}
+      - JINA_API_KEY=${JINA_API_KEY}
+      - TUSHARE_TOKEN=${TUSHARE_TOKEN}
+      - RUNTIME_ENV_PATH=/app/runtime_env.json
+      - DATABASE_URL=postgresql://aitrader:aitrader_password@postgres:5432/trading_db
+      - MATH_HTTP_PORT=8000
+      - SEARCH_HTTP_PORT=8001
+      - TRADE_HTTP_PORT=8002
+      - GETPRICE_HTTP_PORT=8003
+      - CRYPTO_HTTP_PORT=8005
+      - AGENT_MAX_STEP=30
+    networks:
+      - trading-network
+    command: tail -f /dev/null  # Keep container running for manual execution
+
+  # Streamlit Stock Dashboard
+  streamlit-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: streamlit-dashboard
+    ports:
+      - "8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://aitrader:aitrader_password@postgres:5432/trading_db
+    volumes:
+      - ./streamlit:/app
+    networks:
+      - trading-network
+    command: streamlit run stock_dashboard.py --server.port=8501 --server.address=0.0.0.0
+
+volumes:
+  postgres_data:
+
+networks:
+  trading-network:
+    driver: bridge

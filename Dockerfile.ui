@@ -1,0 +1,21 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy docs directory
+COPY docs /app/docs
+
+# Expose port
+EXPOSE 8888
+
+# Set working directory to docs
+WORKDIR /app/docs
+
+# Run simple HTTP server
+CMD ["python3", "-m", "http.server", "8888"]
