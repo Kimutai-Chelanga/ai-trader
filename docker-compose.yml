@@ -1,26 +1,44 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: ai-trader-postgres
     environment:
-      POSTGRES_USER: aitrader
-      POSTGRES_PASSWORD: aitrader_password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: trading_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      # Schema is now managed by Alembic migrations
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aitrader"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d trading_db"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - trading-network
+
+  # Alembic Migration Service
+  alembic:
+    build:
+      context: .
+      dockerfile: Dockerfile.alembic
+    container_name: ai-trader-alembic
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=trading_db
+    networks:
+      - trading-network
+    # Auto-run migrations on startup
+    command: alembic upgrade head
 
   # AI-Trader Web UI
   ai-trader-ui:
@@ -34,10 +52,12 @@ services:
       - ./docs:/app/docs
       - ./data:/app/data
     depends_on:
+      alembic:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://aitrader:aitrader_password@postgres:5432/trading_db
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/trading_db
     networks:
       - trading-network
     command: python3 -m http.server 8888
@@ -56,6 +76,8 @@ services:
       - ./tools:/app/tools
       - ./agent_tools:/app/agent_tools
     depends_on:
+      alembic:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     environment:
@@ -65,7 +87,12 @@ services:
       - JINA_API_KEY=${JINA_API_KEY}
       - TUSHARE_TOKEN=${TUSHARE_TOKEN}
       - RUNTIME_ENV_PATH=/app/runtime_env.json
-      - DATABASE_URL=postgresql://aitrader:aitrader_password@postgres:5432/trading_db
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=trading_db
       - MATH_HTTP_PORT=8000
       - SEARCH_HTTP_PORT=8001
       - TRADE_HTTP_PORT=8002
@@ -85,10 +112,18 @@ services:
     ports:
       - "8501:8501"
     depends_on:
+      alembic:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://aitrader:aitrader_password@postgres:5432/trading_db
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=trading_db
+      - ALPHAADVANTAGE_API_KEY=${ALPHAADVANTAGE_API_KEY}
     volumes:
       - ./streamlit:/app
     networks:

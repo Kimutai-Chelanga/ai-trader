@@ -1,0 +1,30 @@
+# Dockerfile.alembic
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install PostgreSQL client and dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages
+RUN pip install --no-cache-dir \
+    alembic==1.13.1 \
+    sqlalchemy==2.0.25 \
+    psycopg2-binary==2.9.9 \
+    python-dotenv==1.0.0
+
+# Copy entire project context
+COPY . .
+
+# Ensure alembic directory exists with proper structure
+RUN if [ ! -d "alembic" ]; then \
+        alembic init alembic; \
+    fi && \
+    mkdir -p alembic/versions
+
+# Default command: show current revision
+CMD ["alembic", "current"]
